@@ -10,3 +10,5 @@
 /data/saved_data/
 /checkpoints/
 /logs/
+.idea
+.DS_Store
