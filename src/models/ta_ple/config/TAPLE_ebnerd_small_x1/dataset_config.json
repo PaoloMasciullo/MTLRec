@@ -1,0 +1,54 @@
+{
+    "train_file": "./data/Preprocessed_Ebnerd_small/train.csv",
+    "valid_file": "./data/Preprocessed_Ebnerd_small/valid.csv",
+    "test_file": "./data/Preprocessed_Ebnerd_small/test.csv",
+    "features": [
+        {"name": "impression_id", "type": "meta"},
+
+        {"name": "user_id", "type": "categorical", "min_freq": 10},
+        {"name": "device_type", "type": "categorical", "min_freq": 10},
+        {"name": "is_sso_user", "type": "categorical", "min_freq": 10},
+        {"name": "is_subscriber", "type": "categorical", "min_freq": 10},
+
+        {"name": "hours_since_publish", "type": "categorical", "min_freq": 10},
+        {"name": "cumulative_exposure_count", "type": "categorical", "min_freq": 10},
+        {"name": "relative_popularity_change_48h", "type": "categorical", "min_freq": 10},
+        {"name": "hourly_exposure_count", "type": "categorical", "min_freq": 10},
+        {"name": "article_frequency_in_session", "type": "categorical", "min_freq": 10},
+        {"name": "time_diff_in_session", "type": "categorical", "min_freq": 10},
+        {"name": "deviation_from_session_mean", "type": "categorical", "min_freq": 10},
+        {"name": "articles_browsed_by_user", "type": "categorical", "min_freq": 10},
+
+        {"name": "article_id", "type": "categorical", "min_freq": 10},
+        {"name": "premium", "type": "categorical", "min_freq": 10},
+        {"name": "article_type", "type": "categorical", "min_freq": 10},
+        {"name": "category", "type": "categorical", "min_freq": 10},
+        {"name": "sentiment_label", "type": "categorical", "min_freq": 10},
+        {"name": "topic1", "type": "categorical", "min_freq": 10},
+
+        {"name": "topics", "type": "sequence", "pooling": "average", "max_len": 5, "splitter": "^", "min_freq": 10},
+        {"name": "subcategory", "type": "sequence", "pooling": "average", "max_len": 5, "splitter": "^", "min_freq": 10},
+        {"name": "ner_clusters", "type": "sequence", "pooling": "average", "max_len": 5, "splitter": "^", "min_freq": 10},
+
+        {"name": "article_id_img", "type": "categorical", "freeze_emb": true, "pretrain_dim": 64,
+            "pretrained_emb": "./data/Preprocessed_Ebnerd_small/image_emb_dim64.npz",
+            "mapped_feature": "article_id", "min_freq": 1},
+        {"name": "article_id_txt", "type": "categorical", "freeze_emb": true, "pretrain_dim": 64,
+            "pretrained_emb": "./data/Preprocessed_Ebnerd_small/roberta_emb_dim64.npz",
+            "mapped_feature": "article_id", "min_freq": 1},
+        {"name": "hist_id", "type": "sequence", "max_len": 50, "splitter": "^", "share_embedding": "article_id", "min_freq": 10},
+        {"name": "hist_cat", "type": "sequence", "max_len": 50, "splitter": "^", "share_embedding": "category", "min_freq": 10},
+        {"name": "hist_topic1", "type": "sequence", "max_len": 50, "splitter": "^", "share_embedding":  "topic1", "min_freq": 10},
+        {"name": "hist_sentiment", "type": "sequence", "max_len": 50, "splitter": "^", "share_embedding":  "sentiment_label", "min_freq": 10},
+
+        {"name": "hist_id_img", "type":  "sequence", "max_len": 50, "splitter": "^", "freeze_emb": true,
+          "pretrain_dim": 64, "pretrained_emb": "./data/Preprocessed_Ebnerd_small/image_emb_dim64.npz",
+          "mapped_feature": "hist_id", "share_embedding":  "article_id_img", "min_freq": 1},
+        {"name": "hist_id_txt", "type":  "sequence", "max_len": 50, "splitter": "^", "freeze_emb": true,
+          "pretrain_dim": 64, "pretrained_emb": "./data/Preprocessed_Ebnerd_small/roberta_emb_dim64.npz",
+          "mapped_feature": "hist_id", "share_embedding":  "article_id_txt", "min_freq": 1}
+
+    ],
+    "target": ["click", "fully_read"],
+    "group_id": "impression_id"
+}

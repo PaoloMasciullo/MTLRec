@@ -1,0 +1,12 @@
+/data/Ebnerd_demo/
+/data/Ebnerd_small/
+/data/Ebnerd_large/
+/data/Preprocessed_Ebnerd_demo/
+/data/Preprocessed_Ebnerd_small/
+/data/Preprocessed_Ebnerd_large/
+/notebooks/
+/.venv/
+/.pytest_cache/
+/data/saved_data/
+/checkpoints/
+/logs/
