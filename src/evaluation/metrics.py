@@ -161,3 +161,39 @@ class NdcgScore(Metric):
             ]
         )
         return float(res)
+
+
+class HitRatio(Metric):
+    def __init__(self, k: int):
+        """
+        Initializes the Hit Ratio metric for top-k predictions.
+        Args:
+            k (int): The number of top predictions to consider.
+        """
+        self.k = k
+        self.name = f"Hit Ratio@{k}"
+        self.type = "metric"
+
+    def calculate(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """
+        Calculate the Hit Ratio@k for a multiclass classification task.
+
+        Args:
+            y_true (np.ndarray): True labels (shape: [n_samples]).
+            y_pred (np.ndarray): Predicted scores (shape: [n_samples, n_classes]).
+
+        Returns:
+            float: The Hit Ratio@k score.
+        """
+        hits = 0
+        for true_label, pred_scores in zip(y_true, y_pred):
+            # Get the indices of the top-k predicted categories
+            top_k_indices = np.argsort(pred_scores)[-self.k:][::-1]
+
+            # Check if the true label is in the top-k predictions
+            if true_label in top_k_indices:
+                hits += 1
+
+        # Compute the hit ratio as the proportion of hits
+        hit_ratio = hits / len(y_true)
+        return hit_ratio
