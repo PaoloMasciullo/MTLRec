@@ -1,6 +1,7 @@
 from typing import Iterable
 import numpy as np
 import polars as pl
+import torch
 from pandas.core.common import flatten
 from collections import Counter
 
@@ -525,3 +526,14 @@ def compute_std(lst):
         return None
 
     return np.std(filtered_data)
+
+
+# KL Divergence for Gaussian distributions
+def kl_divergence_gaussian(mu_pred, sigma_pred, mu_pos, sigma_pos):
+    epsilon = 1e-8
+    sigma_pred = sigma_pred + epsilon
+    sigma_pos = sigma_pos + epsilon
+
+    kl_loss = torch.log(sigma_pos / sigma_pred) + (sigma_pred ** 2 + (mu_pred - mu_pos) ** 2) / (
+                2 * sigma_pos ** 2) - 0.5
+    return kl_loss.mean()
