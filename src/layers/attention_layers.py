@@ -66,3 +66,32 @@ class TargetAttention(nn.Module):
         output = torch.bmm(attention_weights.unsqueeze(1), history_keys).squeeze(1)  # (batch_size, embedding_dim)
 
         return output
+
+
+class AttentionLayer(nn.Module):
+    """attention for info tranfer
+
+    Args:
+        dim (int): attention dim
+
+    Shape:
+        Input: (batch_size, 2, dim)
+        Output: (batch_size, dim)
+    """
+
+    def __init__(self, dim=32):
+        super().__init__()
+        self.dim = dim
+        self.q_layer = nn.Linear(dim, dim, bias=False)
+        self.k_layer = nn.Linear(dim, dim, bias=False)
+        self.v_layer = nn.Linear(dim, dim, bias=False)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x):
+        Q = self.q_layer(x)
+        K = self.k_layer(x)
+        V = self.v_layer(x)
+        a = torch.sum(torch.mul(Q, K), -1) / torch.sqrt(torch.tensor(self.dim))
+        a = self.softmax(a)
+        outputs = torch.sum(torch.mul(torch.unsqueeze(a, -1), V), dim=1)
+        return outputs
