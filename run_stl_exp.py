@@ -3,11 +3,9 @@ import gc
 import os
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 from torch.utils.data import DataLoader
-import torch.optim as optim
-import torch.nn as nn
 import src.models as models
 from src.evaluation.evaluate_model import ModelEvaluator
-from src.evaluation.metrics import AvgAucScore, MrrScore, NdcgScore
+import src.evaluation.metrics as metrics
 from src.preprocess.data_preprocessor import DataProcessor
 from src.training.train_model import Trainer
 import json
@@ -21,7 +19,7 @@ if __name__ == '__main__':
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default='./src/models/mlp', help='the model directory')
-    parser.add_argument('--expid', type=str, default='MLP_ebnerd_small_x1', help='The experiment id to run.')
+    parser.add_argument('--expid', type=str, default='MLP_ebnerd_small_x2', help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
 
@@ -36,7 +34,9 @@ if __name__ == '__main__':
     # Configuration
     dataset_config = json.load(open(f"{model_dir}/config/{experiment_id}/dataset_config.json", 'r'))
     model_config = json.load(open(f"{model_dir}/config/{experiment_id}/model_config.json", 'r'))
+    trainer_config = json.load(open(f"{model_dir}/config/{experiment_id}/trainer_config.json", 'r'))
 
+    dataset_id = dataset_config['dataset_id']
     train_file = dataset_config['train_file']
     valid_file = dataset_config['valid_file']
     test_file = dataset_config['test_file']
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     group_id = dataset_config['group_id']
 
     # Paths for saving/loading preprocessed data
-    processor_save_dir = f"./data/saved_data/{experiment_id}/"
+    processor_save_dir = f"./data/saved_data/{dataset_id}/"
     # Load or preprocess data
     if os.path.exists(processor_save_dir):  # delete this path if you want to process data from scratch...
         print("Loading preprocessed data and DataProcessor...")
@@ -56,7 +56,7 @@ if __name__ == '__main__':
         data_processor.process_from_files(train_file, valid_file, test_file)
 
     # Initialize DataLoaders for batching
-    batch_size = 1024
+    batch_size = 2048
 
     train_data = data_processor.load_data("train")
     train_loader = DataLoader(SingleTaskDataset(data_processor.feature_map, train_data), batch_size=batch_size,
@@ -75,21 +75,14 @@ if __name__ == '__main__':
     model_class = getattr(models, model_config['model'])
     model = model_class(feature_map=data_processor.feature_map, **model_config["config"])
 
-    # Set up optimizer and loss function
-    optimizer_class = optim.AdamW
-    optimizer_params = {"lr": 1e-3, "weight_decay": 1e-3}
-    criterion = nn.BCELoss()
-    monitor_metric = AvgAucScore()
-    metric_functions = [AvgAucScore(), MrrScore(), NdcgScore(k=5), NdcgScore(k=10)]
+    metric_functions = [metrics.AucScore()]
     evaluator = ModelEvaluator(metric_functions=metric_functions)
-    trainer = Trainer(model=model, optimizer_class=optimizer_class, optimizer_params=optimizer_params,
-                      loss_function=criterion, monitor_metric=monitor_metric, monitor_mode="max", evaluator=evaluator,
-                      device=device, task="binary-classification", expid=experiment_id, log_dir='./logs/',
-                      save_path='./checkpoints/')
+
+    trainer = Trainer(model=model, device=device, evaluator=evaluator, expid=experiment_id, **trainer_config)
 
     # Training
     print('******** Training ******** ')
-    trainer.fit(train_loader=train_loader, val_loader=valid_loader, epochs=10, patience=5)
+    trainer.fit(train_loader=train_loader, val_loader=valid_loader, epochs=10, patience=3)
     del train_loader, valid_loader
     gc.collect()
     # Evaluation

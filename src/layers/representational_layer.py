@@ -38,7 +38,8 @@ class PretrainedEmbeddings(nn.Module):
         if info["freeze_emb"]:
             self.embedding_layer.weight.requires_grad = False
 
-        self.project_embeddings = nn.Linear(info["pretrain_dim"], embedding_dim)
+        # self.project_embeddings = nn.Linear(info["pretrain_dim"], embedding_dim) \
+        #     if info["pretrain_dim"] != embedding_dim else nn.Identity()
 
         self.apply(self.init_weights)
 
@@ -64,33 +65,44 @@ class RepresentationalLayer(nn.Module):
 
         # Initialize embeddings and pooling configurations
         for feature, info in self.feature_map["features"].items():
-            # Shared embeddings
-            if "share_embedding" in info and info["share_embedding"] in self.embedding_layers:
-                self.embedding_layers[feature] = self.embedding_layers[info["share_embedding"]]
-                continue
-
-            # Pretrained embeddings
-            if "pretrained_emb" in info:
-                self.embedding_layers[feature] = PretrainedEmbeddings(feature_map, info, feature, embedding_dim)
-                continue
-
             # Categorical embeddings
             if info["type"] == "categorical":
-                self.embedding_layers[feature] = nn.Embedding(info["vocab_size"],
-                                                              embedding_dim,
-                                                              padding_idx=info.get("pad_index", None))
+                # Shared embeddings
+                if "share_embedding" in info and info["share_embedding"] in self.embedding_layers:
+                    self.embedding_layers[feature] = self.embedding_layers[info["share_embedding"]]
+                # Pretrained embeddings
+                elif "pretrained_emb" in info:
+                    self.embedding_layers[feature] = PretrainedEmbeddings(feature_map, info, feature, embedding_dim)
+                else:
+                    self.embedding_layers[feature] = nn.Embedding(info["vocab_size"],
+                                                                  embedding_dim,
+                                                                  padding_idx=info.get("pad_index", None))
 
             # Sequential features with pooling
             elif info["type"] == "sequence":
-                self.embedding_layers[feature] = nn.Embedding(info["vocab_size"],
-                                                              embedding_dim,
-                                                              padding_idx=info.get("pad_index", None))
+                # Shared embeddings
+                if "share_embedding" in info and info["share_embedding"] in self.embedding_layers:
+                    self.embedding_layers[feature] = self.embedding_layers[info["share_embedding"]]
+                # Pretrained embeddings
+                elif "pretrained_emb" in info:
+                    self.embedding_layers[feature] = PretrainedEmbeddings(feature_map, info, feature, embedding_dim)
+                else:
+                    self.embedding_layers[feature] = nn.Embedding(info["vocab_size"],
+                                                                  embedding_dim,
+                                                                  padding_idx=info.get("pad_index", None))
                 if info.get("pooling") is not None:
                     self.pooling_info[feature] = info["pooling"]
 
             # Numerical features
             elif info["type"] == "numerical":
-                self.embedding_layers[feature] = nn.Linear(1, embedding_dim, bias=False)
+                # Shared embeddings
+                if "share_embedding" in info and info["share_embedding"] in self.embedding_layers:
+                    self.embedding_layers[feature] = self.embedding_layers[info["share_embedding"]]
+                # Pretrained embeddings
+                elif "pretrained_emb" in info:
+                    self.embedding_layers[feature] = PretrainedEmbeddings(feature_map, info, feature, embedding_dim)
+                else:
+                    self.embedding_layers[feature] = nn.Linear(1, embedding_dim, bias=False)
 
         self.init_weights()
 

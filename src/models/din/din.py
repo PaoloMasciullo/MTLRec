@@ -2,23 +2,23 @@ import torch
 from torch import nn
 from src.layers.representational_layer import RepresentationalLayer
 from src.layers.mlp_block import MLPBlock
-from src.layers.target_attention import TargetAttention
+from src.layers.attention_layers import TargetAttention
 
 
 class DIN(nn.Module):
     def __init__(self,
                  feature_map,
                  embedding_dim=10,
-                 attention_hidden_sizes=[64],
+                 attention_hidden_sizes=None,
                  attention_hidden_activations="Dice",
-                 dnn_hidden_sizes=[512, 128, 64],
+                 dnn_hidden_sizes=None,
                  dnn_hidden_activations="ReLu",
                  dnn_output_size=1,
                  dnn_output_activation="Sigmoid",
                  dnn_dropout=0.5,
                  use_batchnorm=True,
-                 target_features=["item_id", "cate_id"],
-                 sequence_features=["click_history", "cate_history"],
+                 target_features=None,
+                 sequence_features=None,
                  attention_dropout=0.5,
                  use_softmax=False,
                  target_pretrained_multimodal_embeddings=None,  # ["item_id_img", "item_id_text"]
@@ -37,6 +37,14 @@ class DIN(nn.Module):
         :param sequence_pretrained_multimodal_embeddings: List specifying sequence pretrained multimodal embeddings.
         """
         super(DIN, self).__init__()
+        if sequence_features is None:
+            sequence_features = ["click_history", "cate_history"]
+        if target_features is None:
+            target_features = ["item_id", "cate_id"]
+        if dnn_hidden_sizes is None:
+            dnn_hidden_sizes = [512, 128, 64]
+        if attention_hidden_sizes is None:
+            attention_hidden_sizes = [64]
         self.feature_map = feature_map
         self.target_features = target_features
         self.sequence_features = sequence_features
@@ -86,16 +94,16 @@ class DIN(nn.Module):
         )
         self.apply(self.init_weights)
 
-    def forward(self, X):
+    def forward(self, inputs):
         # Extract embeddings
-        feature_emb_dict = self.embedding_layer(X)
+        feature_emb_dict = self.embedding_layer(inputs)
 
         # Apply standard attention to target and sequence features
-        self._apply_attention(X, self.attention_layer, self.target_features, self.sequence_features, feature_emb_dict)
+        self._apply_attention(inputs, self.attention_layer, self.target_features, self.sequence_features, feature_emb_dict)
 
         # If multimodal embeddings are provided, apply attention for them
         if self.target_pretrained_multimodal_embeddings:
-            self._apply_attention(X,
+            self._apply_attention(inputs,
                                   self.multimodal_attention_layer,
                                   self.target_pretrained_multimodal_embeddings,
                                   self.sequence_pretrained_multimodal_embeddings,

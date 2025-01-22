@@ -38,7 +38,7 @@ class MultiTaskDataset(Dataset):
                             and `targets` (list of keys for target labels).
         :param data: Dictionary of tensors containing features and target labels.
         """
-        targets = feature_map['targets']
+        targets = [target for target in feature_map['targets']]
         if not isinstance(targets, list):
             raise TypeError("`feature_map['targets']` must be a list of target keys.")
 

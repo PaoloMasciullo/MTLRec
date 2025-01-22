@@ -46,11 +46,12 @@ class ModelEvaluator:
     def evaluate(self,
                  labels: list[np.ndarray],
                  predictions: list[np.ndarray],
-                 group_ids: list[np.ndarray] = None
+                 group_ids: list[np.ndarray] = None,
+                 task: str = "binary-classification"
                  ) -> dict:
 
         for metric_function in self.metric_functions:
-            if metric_function.type == "group_metric":
+            if metric_function.type == "group_metric" and task != "ranking":
                 assert group_ids is not None, "group_index is required."
                 # Group outputs and labels
                 grouped_labels, grouped_predictions = group_by_id(group_ids, predictions, labels)

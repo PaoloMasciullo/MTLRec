@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from src.layers.representational_layer import RepresentationalLayer
 from src.layers.mlp_block import MLPBlock
-from src.layers.target_attention import TargetAttention
+from src.layers.attention_layers import TargetAttention
 
 
 class DIVAN(nn.Module):

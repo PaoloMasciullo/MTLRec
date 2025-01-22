@@ -1,3 +1,8 @@
+"""
+References:
+    paper: (RecSys'2020) Progressive Layered Extraction (PLE): A Novel Multi-Task Learning (MTL) Model for Personalized Recommendations
+    url: https://dl.acm.org/doi/abs/10.1145/3383313.3412236
+"""
 import torch
 from torch import nn
 
@@ -88,7 +93,6 @@ class CGC_Layer(nn.Module):
             gate_scores = self.gates[i](x[i if i < len(self.specific_experts) else -1])
             gated_output = torch.sum(gate_scores.unsqueeze(-1) * gate_input, dim=1)
             outputs.append(gated_output)
-
         return outputs
 
 
@@ -128,6 +132,7 @@ class PLE(nn.Module):
         # Embedding layers
         self.feature_map = feature_map
         self.num_tasks = num_tasks
+        self.num_layers = num_layers
         assert len(self.feature_map["targets"]) == self.num_tasks, \
             "The number of targets must be equal to the number of tasks"
 
@@ -172,9 +177,10 @@ class PLE(nn.Module):
         feature_emb = torch.cat(feature_list, dim=-1)
 
         # Pass through each CGC layer
-        cgc_outputs = [feature_emb for _ in range(self.num_tasks + 1)]  # Shared input for all tasks
-        for cgc_layer in self.cgc_layers:
-            cgc_outputs = cgc_layer(cgc_outputs)
+        cgc_inputs = [feature_emb for _ in range(self.num_tasks + 1)]  # Shared input for all tasks
+        for i in range(self.num_layers):
+            cgc_outputs = self.cgc_layers[i](cgc_inputs)
+            cgc_inputs = cgc_outputs  # Explicitly update inputs for the next layer
 
         # Pass through each tower for task-specific outputs
         targets = self.feature_map["targets"]

@@ -20,7 +20,7 @@ class DataProcessor:
         else:
             self.target_cols = [target_cols]
         self.group_id = group_id
-        self.feature_map = {"features": {}, "targets": [target for target in self.target_cols]}  # Maps feature names to metadata
+        self.feature_map = {"features": {}, "targets": [target["name"] for target in self.target_cols]}  # Maps feature names to metadata
         if self.group_id:
             self.feature_map["group_id"] = self.group_id
         self.encoders = {}
@@ -41,7 +41,7 @@ class DataProcessor:
             gc.collect()
 
     def preprocess(self, df: pl.DataFrame):
-        cols = [target for target in self.target_cols]
+        cols = [target["name"] for target in self.target_cols]
         for feature in self.feature_types:
             cols.append(feature['name'])
             if feature['name'] in df.columns:
@@ -102,7 +102,18 @@ class DataProcessor:
             else:
                 raise NotImplementedError("feature type={}".format(feature["type"]))
         for target in self.target_cols:
-            transformed_data[target] = torch.tensor(df[target], dtype=torch.long)
+            if target["type"] == "binary":  # 0 or 1
+                transformed_data[target["name"]] = torch.tensor(df[target["name"]].to_numpy(), dtype=torch.float32)
+            elif target["type"] == "multiclass":  # 0, 1, 2, 3, ..., n
+                transformed_data[target["name"]] = torch.tensor(df[target["name"]], dtype=torch.long)
+            elif target["type"] == "regression":  # continuous values
+                transformed_data[target["name"]] = torch.tensor(df[target["name"]], dtype=torch.float32)
+            elif target["type"] == "binary-vector":  # [1, 1, 0, 1]
+                sequences = df[target["name"]].fill_null("").str.split(target["splitter"]).to_list()
+                sequences = [[int(el) for el in seq] for seq in sequences]
+                transformed_data[target["name"]] = torch.tensor(sequences)
+            else:
+                raise NotImplementedError("target type={}".format(target["type"]))
         return transformed_data
 
     def _fit_categorical(self, df, feature, min_freq):
@@ -147,7 +158,7 @@ class DataProcessor:
         keys = np.load(feature["pretrained_emb"])['key']
         self.encoders[feature["name"]] = le.merge_vocabulary(keys)
         # Store information in the feature map
-        self.feature_map["features"][feature["name"]] = {
+        self.feature_map["features"][feature["name"]].update({
             "type": feature["type"],
             "pretrained_emb": feature["pretrained_emb"],
             "freeze_emb": feature["freeze_emb"],
@@ -155,7 +166,7 @@ class DataProcessor:
             "oov_index": le.oov_index,
             "pad_index": le.pad_index,
             "vocab_size": len(le.index_to_class),
-        }
+        })
 
     def _handle_shared_embedding(self, feature, current_encoder):
         """
@@ -183,7 +194,7 @@ class DataProcessor:
 
     def _transform_categorical(self, df, feature):
         le = self.encoders[feature["name"]]
-        return torch.tensor(le.transform(df[feature["name"]]), dtype=torch.long)
+        return torch.tensor(le.transform(df[feature["name"]]))
 
     def _transform_sequence(self, df, feature):
         le = self.encoders[feature["name"]]
@@ -198,7 +209,7 @@ class DataProcessor:
             trunc_seq = seq[-feature["max_len"]:]  # Truncate to max_len
             padded_sequences[i, :len(trunc_seq)] = trunc_seq  # Fill the sequence
 
-        return torch.tensor(padded_sequences, dtype=torch.long)
+        return torch.tensor(padded_sequences)
 
     def _transform_numerical(self, df, feature):
         scaler = self.scalers[feature["name"]]
