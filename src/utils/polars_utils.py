@@ -1,10 +1,10 @@
+import time
 import numpy as np
 import random
-import json
 import gc
 import os
 import pyarrow.parquet as pq
-import pyarrow as pa
+from tqdm import tqdm
 
 try:
     import polars as pl
@@ -787,3 +787,43 @@ def concat_list_str(df: pl.DataFrame, column: str) -> pl.DataFrame:
     return df.with_columns(
         pl.col(column).list.eval(pl.element().str.concat(" "))
     ).explode(column)
+
+
+def reduce_mem(df: pl.DataFrame) -> pl.DataFrame:
+    starttime = time.time()
+    numerics = [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64]
+    original_mem = df.estimated_size(unit="mb")  # Estimated size in MB
+
+    # Iterate through columns
+    for col in tqdm(df.columns):
+        col_type = df.schema[col]
+        if col_type in numerics:
+            c_min = df[col].min()
+            c_max = df[col].max()
+
+            if c_min is None or c_max is None:  # Skip columns with missing values
+                continue
+
+            if col_type.is_integer():
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df = df.with_columns(df[col].cast(pl.Int8))
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df = df.with_columns(df[col].cast(pl.Int16))
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df = df.with_columns(df[col].cast(pl.Int32))
+                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
+                    df = df.with_columns(df[col].cast(pl.Int64))
+            elif col_type.is_float():
+                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+                    df = df.with_columns(df[col].cast(pl.Float32))  # Polars doesn't support Float16
+                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df = df.with_columns(df[col].cast(pl.Float32))
+                else:
+                    df = df.with_columns(df[col].cast(pl.Float64))
+
+    # Calculate memory reduction
+    final_mem = df.estimated_size(unit="mb")
+    print(
+        f"-- Mem. usage decreased to {final_mem:5.2f} MB ({100 * (original_mem - final_mem) / original_mem:.1f}% reduction), "
+        f"time spent: {(time.time() - starttime) / 60:2.2f} min")
+    return df
