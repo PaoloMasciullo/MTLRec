@@ -1,0 +1,10 @@
+{
+  "optimizer": "AdamW",
+  "optimizer_params": {"lr": 1e-3, "weight_decay": 1e-6},
+  "task": "binary-classification",
+  "loss_function": "BCELoss()",
+  "monitor_metric": "AucScore()",
+  "monitor_mode": "max",
+  "log_dir": "./logs/",
+  "save_path": "./checkpoints/"
+}
