@@ -5,13 +5,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import os
 import datetime
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.utils.utils import kl_divergence_gaussian
-from src.utils.mtl import PCGrad
+from src.utils.mtl import PCGrad, DynamicWeightAverage
 from src.utils.torch_utils import get_device
 from src.evaluation.utils import group_by_id
 import src.evaluation.metrics as metrics
@@ -264,6 +265,7 @@ class Trainer:
                     print(f"{metric}: \n{value}")
                 else:
                     print(f"{metric}: {value:.4f}")
+        return evaluation_results
 
 
 class MultitaskTrainer(Trainer):
@@ -318,7 +320,8 @@ class MultitaskTrainer(Trainer):
         else:
             self.adaptive_method = "ew"  # equal weighting
 
-        assert self.adaptive_method in ["ew", "uw", "pcgrad", "ple"], f"Adaptive method {self.adaptive_method} not supported."
+        assert self.adaptive_method in ["ew", "uw", "pcgrad", "ple", "dwa", "rlw"], \
+            f"Adaptive method {self.adaptive_method} not supported."
 
         self.loss_function = [eval(f"losses.{loss_fn}") if loss_fn.startswith("BPRLoss") or loss_fn.startswith(
                               "FocalLoss") else eval(f"nn.{loss_fn}") for loss_fn in loss_function]
@@ -330,10 +333,15 @@ class MultitaskTrainer(Trainer):
             self.model.add_module("loss weight", self.loss_weight)
         elif self.adaptive_method == "pcgrad":  # project conflicting gradients
             self.optimizer = PCGrad(self.optimizer)
+        elif self.adaptive_method == "dwa":  # dynamic weight averaging
+            self.dwa = DynamicWeightAverage(num_tasks=self.n_task, temperature=self.adaptive_params.get('temperature', 2.0))
+            self.loss_weight = np.ones(self.n_task)
         elif self.adaptive_method == "ple":  # ple adaptive weighting method
             self.loss_weight = self.adaptive_params["initial_weights"].copy()
             self.update_ratios = self.adaptive_params["update_ratios"]
             self.initial_weights = self.adaptive_params["initial_weights"]
+        elif self.adaptive_method == "rlw":
+            self.loss_weight = F.softmax(torch.randn(self.n_task), dim=-1)
 
     def _train_step(self, features, labels, max_gradient_norm):
         outputs = self.model(features)
@@ -373,9 +381,14 @@ class MultitaskTrainer(Trainer):
             # Update tqdm progress bar
             progress_bar.set_postfix(loss=total_loss / total_steps)
 
-        if self.adaptive_method == "ple":
+        if self.adaptive_method == "ple":  # update loss weights for PLE
             for i, initial_weight in enumerate(self.initial_weights):
                 self.loss_weight[i] = initial_weight * (self.update_ratios[i] ** epoch)
+        elif self.adaptive_method == "rlw":  # update loss weights for RLW
+            self.loss_weight = F.softmax(torch.randn(self.n_task), dim=-1)
+        elif self.adaptive_method == "dwa":  # update loss weights for Dynamic Weight Averaging for the next iteration
+            current_losses = [loss/total_steps for loss in task_losses_aggregated.values()]
+            self.loss_weight = self.dwa.update_weights(current_losses)
 
         avg_loss = total_loss / total_steps
 
@@ -391,11 +404,20 @@ class MultitaskTrainer(Trainer):
         for task_name, avg_task_loss in task_losses_aggregated.items():
             print(f"   Train {task_name}: {avg_task_loss / total_steps:.4f}")
 
-    def _compute_loss(self, y_pred: {}, y_true: {}):
+    def _compute_loss(self, y_pred: dict, y_true: dict):
+        """
+        Compute the total loss across all tasks, supporting different adaptive weighting methods.
+        Args:
+            y_pred (dict): Predicted outputs for all tasks.
+            y_true (dict): Ground truth labels for all tasks.
+        Returns:
+            tuple: (total loss, individual task losses)
+        """
         loss_list = []
         label_keys = self.model.feature_map["targets"]
-        task_losses = {}  # Store individual task losses
-        for i in range(len(label_keys)):
+        task_losses = {}  # Dictionary to store individual task losses
+        # Compute task-specific losses
+        for i, label_key in enumerate(label_keys):
             loss_fn = self.loss_function[i]
             if self.seq_dependence[i] is not None:
                 task_loss = (
@@ -403,27 +425,19 @@ class MultitaskTrainer(Trainer):
                         + self.prev_task_neg_loss(y_pred, y_true, i, label_keys, loss_fn)
                 )
             else:
-                task_loss = loss_fn(y_pred[f"{label_keys[i]}_pred"], y_true[label_keys[i]])
+                task_loss = loss_fn(y_pred[f"{label_key}_pred"], y_true[label_key])
             loss_list.append(task_loss)
-            task_losses[f"Task_{label_keys[i]}_loss"] = task_loss
-        if self.adaptive_method == "uw":  # uncertainty weighting
+            task_losses[f"Task_{label_key}_loss"] = task_loss
+        if self.adaptive_method == "uw":  # Uncertainty Weighting (UW)
             loss = 0
             for loss_i, w_i in zip(loss_list, self.loss_weight):
                 w_i = torch.clamp(w_i, min=0)
-                # Compute the weighted loss component for each task
                 weighted_loss = 1 / (w_i ** 2) * loss_i
-                # Add a regularization term to encourage the learning of useful weights
                 regularization = torch.log(1 + w_i ** 2)
-                # Sum the weighted loss and the regularization term
                 loss += weighted_loss + regularization
-        elif self.adaptive_method == "ple":  # ple adaptive weighting method
-            loss = 0
-            for loss_i, w_i in zip(loss_list, self.loss_weight):
-                # Compute the weighted loss component for each task
-                weighted_loss = w_i * loss_i
-                # Sum the weighted loss and the regularization term
-                loss += weighted_loss
-        else:  # equal weighting
+        elif self.adaptive_method in ["ple", "rlw", "dwa"]:  # Progressive Layered Extraction method
+            loss = sum(w * l for w, l in zip(self.loss_weight, loss_list))
+        else:  # Equal Weighting
             loss = torch.sum(torch.stack(loss_list)) / len(loss_list)
         return loss, task_losses
 
@@ -625,6 +639,7 @@ class MultitaskTrainer(Trainer):
                     else:
                         raise ValueError(f"Task {self.task[i]} not supported.")
 
+            evaluation_results = {}
             for i in range(len(label_keys)):
                 # Convert to numpy arrays
                 outputs = np.array(outputs_lists[label_keys[i]], np.float64)
@@ -634,11 +649,13 @@ class MultitaskTrainer(Trainer):
                     # Group outputs and labels
                     group_ids = np.array(group_id_lists[label_keys[i]], np.int32)
 
-                evaluation_results = self.evaluator[i].evaluate(labels=labels, predictions=outputs, group_ids=group_ids,
+                task_evaluation_results = self.evaluator[i].evaluate(labels=labels, predictions=outputs, group_ids=group_ids,
                                                                 task=self.task[i])
                 print(f"Evaluation Results Task {label_keys[i]} on Test Set:")
-                for metric, value in evaluation_results.items():
+                for metric, value in task_evaluation_results.items():
+                    evaluation_results[f"Task_{label_keys[i]}_{metric}"] = value
                     if metric == "Confusion Matrix":
                         print(f"    {metric}: \n{value}")
                     else:
                         print(f"    {metric}: {value:.4f}")
+        return evaluation_results
