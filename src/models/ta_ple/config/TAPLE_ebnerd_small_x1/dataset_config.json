@@ -1,4 +1,5 @@
 {
+    "dataset_id": "Ebnerd_small_mtl_x2",
     "train_file": "./data/Preprocessed_Ebnerd_small/train.csv",
     "valid_file": "./data/Preprocessed_Ebnerd_small/valid.csv",
     "test_file": "./data/Preprocessed_Ebnerd_small/test.csv",
@@ -49,6 +50,9 @@
           "mapped_feature": "hist_id", "share_embedding":  "article_id_txt", "min_freq": 1}
 
     ],
-    "target": ["click", "fully_read"],
+    "target": [
+        {"name": "click", "type": "binary"},
+        {"name": "fully_scrolled", "type": "binary"}
+    ],
     "group_id": "impression_id"
 }

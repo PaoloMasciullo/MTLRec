@@ -2,15 +2,15 @@
   "model": "PLE",
     "config": {
       "embedding_dim": 128,
-      "num_tasks": 2,
+      "num_tasks": 3,
       "num_layers": 1,
       "num_shared_experts": 1,
       "num_specific_experts": 1,
       "expert_hidden_units": [256],
       "gate_hidden_units": [64],
       "tower_hidden_units": [64],
-      "tower_output_sizes": [1, 79],
-      "tower_output_activations": ["Sigmoid", "Sigmoid"],
+      "tower_output_sizes": [1, 1, 3],
+      "tower_output_activations": ["Sigmoid", "Sigmoid", null],
       "hidden_activations": "ReLU",
       "dropout_probs": 0.5,
       "use_batchnorm": true

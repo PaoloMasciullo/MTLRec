@@ -2,12 +2,11 @@ import torch
 from torch import nn
 from src.layers.representational_layer import RepresentationalLayer
 from src.layers.mlp_block import MLPBlock
-from src.layers.target_attention import TargetAttention
+from src.layers.attention_layers import TargetAttention
 
 
 class HIFN(nn.Module):
     """Hierarchical Interest Fusion Network"""
-
     def __init__(self,
                  hifn_input_size=10,
                  dnn_hidden_sizes=[512, 128, 64],
@@ -48,19 +47,19 @@ class HUIM(nn.Module):
     def __init__(self,
                  feature_map,
                  embedding_dim=10,
-                 attention_hidden_sizes=[64],
+                 attention_hidden_sizes=None,
                  attention_hidden_activations="Dice",
-                 dnn_hidden_sizes=[512, 128, 64],
+                 dnn_hidden_sizes=None,
                  dnn_hidden_activations="ReLu",
                  dnn_output_size=1,
                  dnn_output_activation="Sigmoid",
                  dnn_dropout=0.5,
-                 gate_hidden_sizes=[512, 128],
+                 gate_hidden_sizes=None,
                  gate_hidden_activations="ReLu",
                  gate_dropout=0,
                  use_batchnorm=False,
-                 target_features=["item_id", "cate_id"],
-                 sequence_features=["click_history", "cate_history"],
+                 target_features=None,
+                 sequence_features=None,
                  attention_dropout=0.5,
                  use_softmax=False,
                  target_pretrained_multimodal_embeddings=None,  # ["item_id_img", "item_id_text"]
@@ -79,6 +78,16 @@ class HUIM(nn.Module):
         :param sequence_pretrained_multimodal_embeddings: List specifying sequence pretrained multimodal embeddings.
         """
         super(HUIM, self).__init__()
+        if attention_hidden_sizes is None:
+            attention_hidden_sizes = [64]
+        if dnn_hidden_sizes is None:
+            dnn_hidden_sizes = [512, 128, 64]
+        if gate_hidden_sizes is None:
+            gate_hidden_sizes = [512, 128]
+        if sequence_features is None:
+            sequence_features = ["click_history", "cate_history"]
+        if target_features is None:
+            target_features = ["item_id", "cate_id"]
         self.feature_map = feature_map
         self.target_features = target_features
         self.sequence_features = sequence_features
@@ -91,14 +100,6 @@ class HUIM(nn.Module):
         self.sequence_pretrained_multimodal_embeddings = sequence_pretrained_multimodal_embeddings
         self.embedding_dim = embedding_dim
         self.attention_in_dim = embedding_dim * len(self.target_features)
-
-        assert len(self.target_features) == len(self.sequence_features), \
-            "len(target_features) != len(sequence_features)"
-
-        if self.target_pretrained_multimodal_embeddings:
-            assert len(self.target_pretrained_multimodal_embeddings) == len(
-                self.sequence_pretrained_multimodal_embeddings), \
-                "len(target_pretrained_multimodal_embeddings) != len(sequence_pretrained_multimodal_embeddings)"
 
         # Embedding layer
         self.embedding_layer = RepresentationalLayer(
@@ -121,6 +122,15 @@ class HUIM(nn.Module):
                 mlp_hidden_activations=attention_hidden_activations,
                 mlp_dropout_prob=attention_dropout,
                 use_softmax=use_softmax)
+
+        # project sequence features to the same dimension as target features if they are not
+        if len(sequence_features) != len(target_features):
+            self.proj_sequence_features = nn.Linear(embedding_dim * len(sequence_features), self.attention_in_dim)
+        if (self.sequence_pretrained_multimodal_embeddings and
+                len(sequence_pretrained_multimodal_embeddings) != len(target_pretrained_multimodal_embeddings)):
+            self.proj_sequence_pretrained_multimodal_embeddings = nn.Linear(
+                embedding_dim * len(sequence_pretrained_multimodal_embeddings),
+                embedding_dim * len(target_pretrained_multimodal_embeddings))
 
         hifn_in_size = embedding_dim * (len([*self.user_instant_interest_features, *self.target_features,
                                              *self.target_pretrained_multimodal_embeddings]) +
@@ -151,27 +161,31 @@ class HUIM(nn.Module):
 
         self.apply(self.init_weights)
 
-    def forward(self, X):
+    def forward(self, inputs):
         # Extract embeddings
-        feature_emb_dict = self.embedding_layer(X)
+        feature_emb_dict = self.embedding_layer(inputs)
 
         # User Invariant Interest Modeling
         # Apply standard attention to target and sequence features
-        self._apply_attention(X,
-                              self.attention_layer,
-                              self.target_features,
-                              self.sequence_features,
-                              feature_emb_dict)
-        # If multimodal embeddings are provided, apply attention for them
-        if self.target_pretrained_multimodal_embeddings:
-            self._apply_attention(X,
-                                  self.multimodal_attention_layer,
-                                  self.target_pretrained_multimodal_embeddings,
-                                  self.sequence_pretrained_multimodal_embeddings,
-                                  feature_emb_dict)
+        context_vector = self._apply_attention(inputs,
+                                               self.attention_layer,
+                                               self.target_features,
+                                               self.sequence_features,
+                                               feature_emb_dict)
 
         # Concatenate user_instant_interest_features with user_invariant_interest_features
-        feature_list = [feature_emb_dict[field] for field in feature_emb_dict if feature_emb_dict[field] is not None]
+        feature_list = [feature_emb_dict[field] for field in feature_emb_dict if feature_emb_dict[field] is not None
+                        and field not in [*self.sequence_features, *self.sequence_pretrained_multimodal_embeddings]]
+        feature_list.append(context_vector)
+
+        # If multimodal embeddings are provided, apply attention for them
+        if self.target_pretrained_multimodal_embeddings:
+            multimodal_context_vector = self._apply_attention(inputs,
+                                                              self.multimodal_attention_layer,
+                                                              self.target_pretrained_multimodal_embeddings,
+                                                              self.sequence_pretrained_multimodal_embeddings,
+                                                              feature_emb_dict)
+            feature_list.append(multimodal_context_vector)
 
         feature_emb = torch.cat(feature_list, dim=-1)
 
@@ -190,11 +204,13 @@ class HUIM(nn.Module):
         sequence_emb = torch.cat([feature_emb_dict[field] for field in sequence_fields],
                                  dim=-1)  # (batch_size, seq_len, embedding_dim) * len(sequence_fields)
 
+        # project sequence features to the same dimension as target features if they are not
+        if len(sequence_fields) != len(target_fields):
+            sequence_emb = self.proj_sequence_features(sequence_emb)
+
         context_vector = attention_layer(target_emb, sequence_emb, mask)
 
-        # Update embeddings in dictionary
-        for field, emb in zip(sequence_fields, context_vector.split(self.embedding_dim, dim=-1)):
-            feature_emb_dict[field] = emb
+        return context_vector
 
     @staticmethod
     def init_weights(m):

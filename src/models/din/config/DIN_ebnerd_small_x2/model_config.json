@@ -6,7 +6,7 @@
     "attention_hidden_activations": "Dice",
     "dnn_hidden_sizes": [512, 128, 64],
     "dnn_hidden_activations": "ReLu",
-    "dnn_output_size": 1,
+    "dnn_output_size": 32,
     "dnn_output_activation": "Sigmoid",
     "dnn_dropout": 0.5,
     "use_batchnorm": true,

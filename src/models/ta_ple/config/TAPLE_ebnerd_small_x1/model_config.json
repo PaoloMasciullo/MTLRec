@@ -1,7 +1,7 @@
 {
   "model": "TAPLE",
   "config": {
-    "embedding_dim": 64,
+    "embedding_dim": 128,
     "attention_hidden_sizes": [ 64 ],
     "attention_hidden_activations": "Dice",
     "target_features": [ "article_id", "category", "topic1", "sentiment_label"],

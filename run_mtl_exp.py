@@ -1,6 +1,7 @@
 import argparse
 import gc
 import os
+
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 from torch.utils.data import DataLoader
 from src.evaluation.evaluate_model import ModelEvaluator
@@ -17,8 +18,9 @@ if __name__ == '__main__':
     ''' Usage: python run_mtl_exp.py --model_dir {model_dir} --expid {experiment_id} --gpu {gpu_device_id} '''
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default='./src/models/ple', help='the model directory')
-    parser.add_argument('--expid', type=str, default='PLE_ebnerd_small_x4', help='The experiment id to run.')
+    parser.add_argument('--expid', type=str, default='PLE_ebnerd_small_x1', help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
+    parser.add_argument('--seed', type=int, default=42, help='The random seed to use for reproducibility')
     args = vars(parser.parse_args())
 
     experiment_id = args['expid']
@@ -26,7 +28,7 @@ if __name__ == '__main__':
     device = args['gpu']
 
     # Set seed for reproducibility
-    SEED = 51
+    SEED = args['seed'] if 'seed' in args else 42
     seed_everything(SEED)
 
     # Configuration
@@ -72,19 +74,17 @@ if __name__ == '__main__':
     model = model_class(feature_map=data_processor.feature_map, **model_config["config"])
 
     metric_functions_1 = [metrics.AucScore()]  # task 1: click prediction
-    metric_functions_2 = [metrics.AccuracyScore(), metrics.F1Score(), metrics.ConfusionMatrix()]  # task 2
-
+    metric_functions_2 = [metrics.AucScore()]  # task 2
 
     evaluators = [
         ModelEvaluator(metric_functions=metric_functions_1),  # task 1: click prediction
         ModelEvaluator(metric_functions=metric_functions_2),  # task 2
-        ModelEvaluator(metric_functions=metric_functions_2),  # task 3
     ]
 
     trainer = MultitaskTrainer(model=model, device=device, evaluator=evaluators, expid=experiment_id, **trainer_config)
 
     print('******** Training ******** ')
-    trainer.fit(train_loader=train_loader, val_loader=valid_loader, epochs=50, patience=15)
+    trainer.fit(train_loader=train_loader, val_loader=valid_loader, epochs=10, patience=3)
     del train_loader, valid_loader
     gc.collect()
     print('******** Model Evaluation ******** ')

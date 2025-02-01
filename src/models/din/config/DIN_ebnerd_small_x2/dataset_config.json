@@ -1,5 +1,5 @@
 {
-    "dataset_id": "Ebnerd_small_stl_x1",
+    "dataset_id": "Ebnerd_small_stl_x4",
     "train_file": "./data/Preprocessed_Ebnerd_small/train.csv",
     "valid_file": "./data/Preprocessed_Ebnerd_small/valid.csv",
     "test_file": "./data/Preprocessed_Ebnerd_small/test.csv",
@@ -52,7 +52,7 @@
 
     ],
     "target": [
-        {"name": "click", "type": "binary"}
+        {"name": "is_user_top_category", "type": "binary-vector", "splitter": "^"}
     ],
     "group_id": "impression_id"
 }

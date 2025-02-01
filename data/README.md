@@ -1,6 +1,6 @@
 # Dataset
 
 Directories:
-+ Ebnerd_{dataset_size}: raw data
-+ Preprocessed_Ebnerd_{dataset_size}_{embedding_size}: csv data after cleaning and feature engineering
-+ saved_data/{model_class}_ebnerd_{dataset_size}_{tag}: pkl tensor data after encoding and transformation
++ {DatasetName}_{dataset_size}: raw data
++ Preprocessed_{DatasetName}_{dataset_size}_{embedding_size}: csv data after parsing, cleaning and feature engineering
++ saved_data/{model_class}_{datasetName}_{dataset_size}_{tag}: pkl tensor data after encoding and transformation

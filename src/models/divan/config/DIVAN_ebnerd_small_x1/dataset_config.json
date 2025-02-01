@@ -51,8 +51,6 @@
           "mapped_feature": "hist_id", "share_embedding":  "article_id_txt", "min_freq": 1}
 
     ],
-    "target": [
-        {"name": "click", "type": "binary"}
-    ],
+    "target": ["click"],
     "group_id": "impression_id"
 }

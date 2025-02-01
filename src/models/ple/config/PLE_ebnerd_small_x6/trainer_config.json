@@ -1,0 +1,14 @@
+{
+  "optimizer": "AdamW",
+  "optimizer_params": {"lr": 1e-3, "weight_decay": 1e-6},
+  "task": ["binary-classification", "binary-classification", "multiclass-classification"],
+  "seq_dependence": [null, 0, 0],
+  "seq_dep_neg_samples": [null, "ignore", "ignore"],
+  "adaptive_method": {"name":  "uw"},
+  "loss_function": ["BCELoss()", "BCELoss()", "CrossEntropyLoss()"],
+  "monitor_metric": ["AucScore()", "AucScore()", "AccuracyScore()"],
+  "monitor_metric_weight": [0.8, 0.1, 0.1],
+  "monitor_mode": "max",
+  "log_dir": "./logs/",
+  "save_path": "./checkpoints/"
+}

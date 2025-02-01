@@ -1,5 +1,5 @@
 {
-  "model": "SharedBottom",
+  "model": "AITM",
   "config": {
     "embedding_dim": 128,
     "num_tasks": 2,

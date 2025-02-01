@@ -1,7 +1,8 @@
 {
-    "train_file": "../../../data/Preprocessed_Ebnerd_small_64/train.csv",
-    "valid_file": "../../../data/Preprocessed_Ebnerd_small_64/valid.csv",
-    "test_file": "../../../data/Preprocessed_Ebnerd_small_64/test.csv",
+    "dataset_id": "Ebnerd_small_mtl_x3",
+    "train_file": "./data/Preprocessed_Ebnerd_small/train.csv",
+    "valid_file": "./data/Preprocessed_Ebnerd_small/valid.csv",
+    "test_file": "./data/Preprocessed_Ebnerd_small/test.csv",
     "features": [
         {"name": "impression_id", "type": "meta"},
 
@@ -24,17 +25,36 @@
         {"name": "article_type", "type": "categorical", "min_freq": 10},
         {"name": "category", "type": "categorical", "min_freq": 10},
         {"name": "sentiment_label", "type": "categorical", "min_freq": 10},
+        {"name": "topic1", "type": "categorical", "min_freq": 10},
+
         {"name": "topics", "type": "sequence", "pooling": "average", "max_len": 5, "splitter": "^", "min_freq": 10},
         {"name": "subcategory", "type": "sequence", "pooling": "average", "max_len": 5, "splitter": "^", "min_freq": 10},
         {"name": "ner_clusters", "type": "sequence", "pooling": "average", "max_len": 5, "splitter": "^", "min_freq": 10},
 
-        {"name": "article_id_img", "type": "categorical", "freeze_emb": true, "pretrain_dim": 64,
-            "pretrained_emb": "../../../data/Preprocessed_Ebnerd_demo_64/image_emb_dim64.npz",
+        {"name": "article_id_img", "type": "categorical", "freeze_emb": true, "pretrain_dim": 128,
+            "pretrained_emb": "./data/Preprocessed_Ebnerd_small/image_emb_dim128.npz",
             "mapped_feature": "article_id", "min_freq": 1},
-        {"name": "article_id_txt", "type": "categorical", "freeze_emb": true, "pretrain_dim": 64,
-            "pretrained_emb": "../../../data/Preprocessed_Ebnerd_demo_64/roberta_emb_dim64.npz",
-            "mapped_feature": "article_id", "min_freq": 1}
+        {"name": "article_id_txt", "type": "categorical", "freeze_emb": true, "pretrain_dim": 128,
+            "pretrained_emb": "./data/Preprocessed_Ebnerd_small/roberta_emb_dim128.npz",
+            "mapped_feature": "article_id", "min_freq": 1},
+
+        {"name": "hist_id", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding": "article_id", "min_freq": 10},
+        {"name": "hist_type", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding":  "article_type", "min_freq": 10},
+        {"name": "hist_cat", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding": "category", "min_freq": 10},
+        {"name": "hist_topic1", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding":  "topic1", "min_freq": 10},
+        {"name": "hist_sentiment", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding":  "sentiment_label", "min_freq": 10},
+
+        {"name": "hist_id_img", "type":  "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "freeze_emb": true,
+          "pretrain_dim": 128, "pretrained_emb": "./data/Preprocessed_Ebnerd_small/image_emb_dim128.npz",
+          "mapped_feature": "hist_id", "share_embedding":  "article_id_img", "min_freq": 1},
+        {"name": "hist_id_txt", "type":  "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "freeze_emb": true,
+          "pretrain_dim": 128, "pretrained_emb": "./data/Preprocessed_Ebnerd_small/roberta_emb_dim128.npz",
+          "mapped_feature": "hist_id", "share_embedding":  "article_id_txt", "min_freq": 1}
+
     ],
-    "target": ["click", "fully_read"],
+    "target": [
+        {"name": "click", "type": "binary"},
+        {"name": "is_user_top_topic", "type": "binary-vector", "splitter": "^"}
+    ],
     "group_id": "impression_id"
 }

@@ -12,3 +12,9 @@
 /logs/
 .idea
 .DS_Store
+/data/Preprocessed_Ali-CCP/
+/data/Ali-CCP/
+/data/AliExpress-US/
+/data/Preprocessed_AliExpress_US/
+/data/AliExpress_US/
+/experiments/

@@ -1,0 +1,8 @@
+{
+  "optimizer": "AdamW",
+  "optimizer_params": {"lr": 1e-3, "weight_decay": 1e-6},
+  "task": "binary-classification",
+  "loss_function": "BCELoss",
+  "log_dir": "./logs/",
+  "save_path": "./checkpoints/"
+}

@@ -9,7 +9,7 @@
       "expert_hidden_units": [256],
       "gate_hidden_units": [64],
       "tower_hidden_units": [64],
-      "tower_output_sizes": [1, 79],
+      "tower_output_sizes": [1, 1],
       "tower_output_activations": ["Sigmoid", "Sigmoid"],
       "hidden_activations": "ReLU",
       "dropout_probs": 0.5,

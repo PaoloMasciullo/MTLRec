@@ -1,3 +1,4 @@
+import json
 import sys
 import os
 
@@ -6,7 +7,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.extend([parent_dir])
 from src.utils.utils import (tokenize_seq, map_feat_id_func, impute_list_with_mean, hours_date_list, weekday_date_list,
-                             bin_list_values, create_reading_patterns, compute_mean)
+                             bin_list_values, compute_mean)
 import polars as pl
 import numpy as np
 from sklearn.decomposition import PCA
@@ -14,6 +15,10 @@ import gc
 import argparse
 import warnings
 from src.utils.torch_utils import seed_everything
+from src.utils.polars_utils import reduce_mem
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.mixture import GaussianMixture
 
 warnings.filterwarnings("ignore")
 
@@ -29,7 +34,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
     parser.add_argument('--data_folder', type=str, default='./', help='The folder in which data will be stored')
-    parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
     parser.add_argument('--embedding_size', type=int, default=128,
                         help='The embedding size you want to reduce the initial embeddings')
@@ -47,7 +51,13 @@ if __name__ == '__main__':
 
     dataset_path = os.path.join(data_folder, 'Ebnerd_' + dataset_size)
 
-    MAX_SEQ_LEN = 150
+    if os.path.isdir(f"{data_folder}/{dataset_version}"):
+        print(f"Folder '{data_folder}/{dataset_version}' exists.")
+    else:
+        os.makedirs(f"{data_folder}/{dataset_version}")
+        print(f"Folder '{data_folder}/{dataset_version}' has been created.")
+
+    MAX_SEQ_LEN = 100
     train_path = dataset_path + '/train/'
     dev_path = dataset_path + '/validation2/'
     test_path = dataset_path + '/test/'
@@ -74,27 +84,43 @@ if __name__ == '__main__':
         .select(['article_id', 'published_time', 'last_modified_time', 'premium', 'article_type', 'ner_clusters',
                  'topics', 'category', 'subcategory', 'sentiment_score', 'sentiment_label', 'article_len'])
         .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
+        .with_columns(topic1=pl.col('topics').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
         .collect()
     )
 
+    # create category and topic vocabularies
+    category_vocab = news["category"].unique().to_list()
+    topic_vocab = news["topics"].explode().unique().to_list()
+    print("number of categories", len(category_vocab))
+    print("number of topics", len(topic_vocab))
+    # encode categories and topics
+    category_vocab = {cat: idx for idx, cat in enumerate(category_vocab)}
+    topic_vocab = {topic: idx for idx, topic in enumerate(topic_vocab)}
+    # save the vocabularies as json files
+    with open(f"{data_folder}/{dataset_version}/category_vocab.json", "w") as f:
+        f.write(json.dumps(category_vocab))
+    with open(f"{data_folder}/{dataset_version}/topic_vocab.json", "w") as f:
+        f.write(json.dumps(topic_vocab))
+
     news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))
     news2subcat = dict(zip(news["article_id"].cast(str), news["subcat1"].cast(str)))
+    news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"]))
+    news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
+    news2topic1 = dict(zip(news["article_id"].cast(str), news["topic1"].cast(str)))
+    news2topic = dict(zip(news["article_id"].cast(str), news["topics"]))
+
     news = tokenize_seq(news, 'ner_clusters', map_feat_id=True)
     news = tokenize_seq(news, 'topics', map_feat_id=True)
     news = tokenize_seq(news, 'subcategory', map_feat_id=False)
     news = map_feat_id_func(news, "sentiment_label")
     news = map_feat_id_func(news, "article_type")
-    news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"]))
-    news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
-
-    news = (
-        news
-        .with_columns(topic1=pl.col('topics').apply(lambda x: str(x.split("^")[0]) if len(x.split("^")) > 0 else ""))
-    )
-    news2topic1 = dict(zip(news["article_id"].cast(str), news["topic1"].cast(str)))
 
     print(news.head())
     print("Preprocess behavior data...")
+
+    scaler = StandardScaler()
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    gmm = GaussianMixture(n_components=3, covariance_type='full', random_state=42)
 
 
     def join_data(data_path):
@@ -217,6 +243,130 @@ if __name__ == '__main__':
         del read_time_bin_mapping, scroll_percent_bin_mapping
         gc.collect()
 
+        # engineer user top 3 category
+        alpha = 0.01  # should be tuned
+        top_categories = (
+            history_df
+            .with_columns(
+                hist_cat=pl.col("hist_cat").str.split("^"),  # Split categories
+                hist_scroll_percent=pl.col("hist_scroll_percent").str.split("^"),
+                hist_hour=pl.col("hist_hour").str.split("^"),
+            )
+            .explode(["hist_cat", "hist_scroll_percent", "hist_hour"])  # Expand rows
+            .with_columns(
+                hist_scroll_percent=pl.col("hist_scroll_percent").cast(pl.Float32),
+                hist_hour=pl.col("hist_hour").cast(pl.Float32)
+            )
+            .with_columns(
+                hist_scroll_percent=pl.col("hist_scroll_percent") / 100,
+                recency_weight=(pl.col("hist_hour") * -alpha).apply(np.exp),  # Apply exponential decay
+            )
+            .with_columns(
+                weighted_scroll=pl.col("hist_scroll_percent") * pl.col("recency_weight")  # Adjust scroll by recency
+            )
+            .group_by(["user_id", "hist_cat"])
+            .agg(
+                count=pl.count(),  # Count occurrences
+                avg_weighted_scroll=pl.mean("weighted_scroll")  # Average recency-adjusted scroll
+            )
+            .with_columns(
+                score=pl.col("count") * (pl.col("avg_weighted_scroll"))  # Compute score
+            )
+            .sort(["user_id", "score", "avg_weighted_scroll"], descending=[False, True, True])  # Sort by score
+            .group_by("user_id")
+            .agg(pl.col("hist_cat").head(3).alias("user_top_categories"))  # Get top-3 categories
+            .with_columns(
+                is_user_top_category=pl.col("user_top_categories").apply(
+                    lambda x: [1 if str(cat) in x else 0 for cat in category_vocab]))
+        )
+        # engineer user top 3 topics
+        top_topics = (
+            history_df
+            .with_columns(
+                hist_id=pl.col("hist_id").str.split("^"),
+                hist_scroll_percent=pl.col("hist_scroll_percent").str.split("^"),
+                hist_hour=pl.col("hist_hour").str.split("^"),
+            )
+            .explode(["hist_id", "hist_scroll_percent", "hist_hour"])
+            .with_columns(hist_topics=pl.col("hist_id").apply(lambda x: news2topic.get(x)))
+            .explode("hist_topics")
+            .with_columns(
+                hist_scroll_percent=pl.col("hist_scroll_percent").cast(pl.Float32),
+                hist_hour=pl.col("hist_hour").cast(pl.Float32)
+            )
+            .with_columns(
+                hist_scroll_percent=pl.col("hist_scroll_percent") / 100,
+                recency_weight=(pl.col("hist_hour") * -alpha).apply(np.exp),  # Apply exponential decay
+            )
+            .with_columns(
+                weighted_scroll=pl.col("hist_scroll_percent") * pl.col("recency_weight")  # Adjust scroll by recency
+            )
+            .group_by(["user_id", "hist_topics"])
+            .agg(
+                count=pl.count(),  # Count occurrences
+                avg_weighted_scroll=pl.mean("weighted_scroll")  # Average recency-adjusted scroll
+            )
+            .with_columns(
+                score=pl.col("count") * (pl.col("avg_weighted_scroll"))  # Compute score
+            )
+            .sort(["user_id", "score", "avg_weighted_scroll"], descending=[False, True, True])  # Sort by score
+            .group_by("user_id")
+            .agg(pl.col("hist_topics").head(3).alias("user_top_topics"))  # Get top-N topics
+            .with_columns(
+                is_user_top_topic=pl.col("user_top_topics").apply(
+                    lambda x: [1 if str(topic) in x else 0 for topic in topic_vocab]))
+        )
+
+        # for users which have no history, fill the user_top_categories and user_top_topics with the most frequent
+        most_freq_cats = (
+            history_df
+            .with_columns(
+                hist_cat=pl.col("hist_cat").str.split("^")
+            )
+            .explode("hist_cat")
+            .group_by("hist_cat")
+            .agg(count=pl.count())
+            .sort("count", descending=True).head(3))
+
+        top_categories = top_categories.with_columns(
+            most_freq_cats=pl.lit(most_freq_cats["hist_cat"].to_list()),
+        ).with_columns(
+            is_most_freq_cat=pl.col("most_freq_cats").apply(
+                lambda x: [1 if str(cat) in most_freq_cats["hist_cat"].to_list() else 0 for cat in category_vocab])
+        )
+        most_freq_topics = (
+            history_df
+            .with_columns(
+                hist_id=pl.col("hist_id").str.split("^"),
+            )
+            .explode("hist_id")
+            .with_columns(hist_topics=pl.col("hist_id").apply(lambda x: news2topic.get(x)))
+            .explode("hist_topics")
+            .group_by("hist_topics")
+            .agg(count=pl.count())
+            .sort("count", descending=True).head(3))
+        top_topics = top_topics.with_columns(
+            most_freq_topics=pl.lit(most_freq_topics["hist_topics"].to_list()),
+        ).with_columns(
+            is_most_freq_topic=pl.col("most_freq_topics").apply(
+                lambda x: [1 if str(topic) in most_freq_topics["hist_topics"].to_list() else 0 for topic in
+                           topic_vocab])
+        )
+
+        history_df = (
+            history_df
+            .join(top_categories, on="user_id", how="left")
+            .join(top_topics, on="user_id", how="left")
+        )
+        history_df = tokenize_seq(history_df, 'user_top_categories', map_feat_id=False, max_seq_length=5)
+        history_df = tokenize_seq(history_df, 'user_top_topics', map_feat_id=False, max_seq_length=5)
+        history_df = tokenize_seq(history_df, 'most_freq_cats', map_feat_id=False, max_seq_length=0)
+        history_df = tokenize_seq(history_df, 'is_most_freq_cat', map_feat_id=False, max_seq_length=0)
+        history_df = tokenize_seq(history_df, 'most_freq_topics', map_feat_id=False, max_seq_length=0)
+        history_df = tokenize_seq(history_df, 'is_most_freq_topic', map_feat_id=False, max_seq_length=0)
+        history_df = tokenize_seq(history_df, 'is_user_top_category', map_feat_id=False, max_seq_length=0)
+        history_df = tokenize_seq(history_df, 'is_user_top_topic', map_feat_id=False, max_seq_length=0)
+
         behavior_file = os.path.join(data_path, "behaviors.parquet")
         sample_df = pl.scan_parquet(behavior_file)
         if "test/" in data_path:
@@ -264,8 +414,8 @@ if __name__ == '__main__':
         sample_df = (
             sample_df
             .with_columns(
-                fully_read=pl.when(pl.col("next_scroll_percentage") == 100).then(1).otherwise(0),
-                over_half_read=pl.when(pl.col("next_scroll_percentage") >= 50).then(1).otherwise(0)
+                fully_scrolled=pl.when(pl.col("next_scroll_percentage") == 100).then(1).otherwise(0),
+                over_half_scrolled=pl.when(pl.col("next_scroll_percentage") >= 50).then(1).otherwise(0)
             )
         )
 
@@ -274,6 +424,23 @@ if __name__ == '__main__':
             .join(news, on='article_id', how="left")
             .join(history_df, on='user_id', how="left")
             .join(news_reading_df, on='category', how='left')
+        )
+
+        # for users which have no history, fill the user_top_categories and user_top_topics with the most frequent
+        sample_df = (
+            sample_df
+            .with_columns(
+                most_freq_cats=pl.col("most_freq_cats").fill_null(pl.col("most_freq_cats").mode()),
+                is_most_freq_cat=pl.col("is_most_freq_cat").fill_null(pl.col("is_most_freq_cat").mode()),
+                most_freq_topics=pl.col("most_freq_topics").fill_null(pl.col("most_freq_topics").mode()),
+                is_most_freq_topic=pl.col("is_most_freq_topic").fill_null(pl.col("is_most_freq_topic").mode())
+            )
+            .with_columns(
+                user_top_categories=pl.col("user_top_categories").fill_null(pl.col("most_freq_cats")),
+                is_user_top_category=pl.col("is_user_top_category").fill_null(pl.col("is_most_freq_cat")),
+                user_top_topics=pl.col("user_top_topics").fill_null(pl.col("most_freq_topics")),
+                is_user_top_topic=pl.col("is_user_top_topic").fill_null(pl.col("is_most_freq_topic"))
+            )
         )
 
         # Ensure the DataFrame is sorted by `impression_time` before performing any time-based calculations
@@ -390,6 +557,7 @@ if __name__ == '__main__':
             )
 
         if "test" not in data_path and args['neg_sampling']:
+            print("Performing negative sampling...")
             # Filter negatives and positives
             negatives = sample_df.filter(pl.col("click") == 0)
             positives = sample_df.filter(pl.col("click") == 1)
@@ -400,24 +568,70 @@ if __name__ == '__main__':
             # Re-assemble positives and negatives
             sample_df = pl.concat([positives, sampled_negatives])
 
-        # remove raws where next_read_time or next_scroll_percentage have null value
+        # drop null values for next_read_time and next_scroll_percentage
         sample_df = sample_df.drop_nulls(subset=["next_read_time", "next_scroll_percentage"])
+
         # Filter out impressions where all samples have click=0
         sample_df = sample_df.with_columns(
             total_clicks=pl.col("click").sum().over("impression_id")
         )
         sample_df = sample_df.filter(pl.col("total_clicks") > 0).drop("total_clicks")
-        #sample_df = sample_df.filter(pl.col("click") == 1)
+
+        # engineer the post click user reading patterns
+        # Extract `next_scroll_percentage` and `next_read_time`
+        positives = (
+            sample_df
+            .filter(pl.col('click') == 1)
+        )
+        clustering_data = positives.select([
+            "next_scroll_percentage",
+            "next_read_time",
+            "article_len",
+        ]).to_numpy()
+
+        if "train/" in data_path:
+            X_scaled = scaler.fit_transform(clustering_data)
+            # clusters = kmeans.fit_predict(X_scaled)
+            clusters = gmm.fit_predict(X_scaled)
+        else:
+            X_scaled = scaler.transform(clustering_data)
+            # clusters = kmeans.predict(X_scaled)
+            clusters = gmm.predict(X_scaled)
+
+        positives = positives.with_columns(
+            pl.Series(name="post_click_reading_pattern", values=clusters, dtype=pl.Int64)
+        )
+
+        # print post_click_reading_pattern classes distribution
+        print(positives.groupby("post_click_reading_pattern").agg(pl.count()))
+
+        # print mean values of next_scroll_percentage, next_read_time, article_len for each cluster
+        print(positives.groupby("post_click_reading_pattern").agg(
+            pl.mean("next_scroll_percentage"),
+            pl.mean("next_read_time"),
+            pl.mean("article_len")
+        ))
+
+        # Filter negatives and positives
+        negatives = sample_df.filter(pl.col("click") == 0)
+
+        # cast the post_click_reading_pattern to int64
+        positives = positives.with_columns(
+            pl.col("post_click_reading_pattern").cast(pl.Int64),
+        )
+        negatives = negatives.with_columns(
+            pl.lit(0).alias("post_click_reading_pattern").cast(pl.Int64),
+            # Assign 0 to negatives, they will be filtered out during training
+        )
+
+        sample_df = pl.concat([positives, negatives])
+
+        # sample_df = sample_df.filter(pl.col("click") == 1)
         sample_df = sample_df.select(pl.all().shuffle(SEED))
+        sample_df = reduce_mem(sample_df)
         print(sample_df.columns)
         return sample_df
 
-
-    if os.path.isdir(f"{data_folder}/{dataset_version}"):
-        print(f"Folder '{data_folder}/{dataset_version}' exists.")
-    else:
-        os.makedirs(f"{data_folder}/{dataset_version}")
-        print(f"Folder '{data_folder}/{dataset_version}' has been created.")
 
     train_df = join_data(train_path)
     print(train_df.head())
@@ -451,32 +665,32 @@ if __name__ == '__main__':
     del news2cat, news2type, news2subcat, news2sentiment, news2topic1
     gc.collect()
 
-    # print("Preprocess pretrained embeddings...")
-    # image_emb_path = dataset_path + '/image_embeddings.parquet'
-    # image_emb_df = pl.read_parquet(image_emb_path)
-    # pca = PCA(n_components=embedding_size)
-    # image_emb = pca.fit_transform(np.array(image_emb_df["image_embedding"].to_list()))
-    # print("image_embedding.shape", image_emb.shape)
-    # item_dict = {
-    #     "key": image_emb_df["article_id"].cast(str),
-    #     "value": image_emb
-    # }
-    # print(f"Save image_emb_dim{embedding_size}.npz...")
-    # np.savez(f"{data_folder}/{dataset_version}/image_emb_dim{embedding_size}.npz", **item_dict)
-    # del image_emb_df, image_emb, item_dict
-    # gc.collect()
-    #
-    # emb_path = dataset_path + f'/{embedding_type}_vector.parquet'
-    # emb_df = pl.read_parquet(emb_path)
-    # emb = pca.fit_transform(np.array(emb_df[emb_df.columns[-1]].to_list()))
-    # print(f"{embedding_type}_emb.shape", emb.shape)
-    # item_dict = {
-    #     "key": emb_df["article_id"].cast(str),
-    #     "value": emb
-    # }
-    # print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
-    # np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-    # del emb, item_dict
-    # gc.collect()
+    print("Preprocess pretrained embeddings...")
+    image_emb_path = dataset_path + '/image_embeddings.parquet'
+    image_emb_df = pl.read_parquet(image_emb_path)
+    pca = PCA(n_components=embedding_size)
+    image_emb = pca.fit_transform(np.array(image_emb_df["image_embedding"].to_list()))
+    print("image_embedding.shape", image_emb.shape)
+    item_dict = {
+        "key": image_emb_df["article_id"].cast(str),
+        "value": image_emb
+    }
+    print(f"Save image_emb_dim{embedding_size}.npz...")
+    np.savez(f"{data_folder}/{dataset_version}/image_emb_dim{embedding_size}.npz", **item_dict)
+    del image_emb_df, image_emb, item_dict
+    gc.collect()
+
+    emb_path = dataset_path + f'/{embedding_type}_vector.parquet'
+    emb_df = pl.read_parquet(emb_path)
+    emb = pca.fit_transform(np.array(emb_df[emb_df.columns[-1]].to_list()))
+    print(f"{embedding_type}_emb.shape", emb.shape)
+    item_dict = {
+        "key": emb_df["article_id"].cast(str),
+        "value": emb
+    }
+    print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
+    np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
+    del emb, item_dict
+    gc.collect()
 
     print("All done.")

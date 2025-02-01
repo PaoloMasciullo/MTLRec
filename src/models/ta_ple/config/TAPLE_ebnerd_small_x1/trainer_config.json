@@ -1,0 +1,11 @@
+{
+  "optimizer": "AdamW",
+  "optimizer_params": {"lr": 1e-3, "weight_decay": 0},
+  "task": ["binary-classification", "binary-classification"],
+  "seq_dependence": [null, 0],
+  "adaptive_method": {"name":  "uw"},
+  "seq_dep_neg_samples": [null, "entropy"],
+  "loss_function": ["BCELoss", "BCELoss"],
+  "log_dir": "./logs/",
+  "save_path": "./checkpoints/"
+}
