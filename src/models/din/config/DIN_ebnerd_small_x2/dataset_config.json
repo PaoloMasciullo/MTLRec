@@ -1,8 +1,8 @@
 {
-    "dataset_id": "Ebnerd_small_stl_x4",
-    "train_file": "./data/Preprocessed_Ebnerd_small/train.csv",
-    "valid_file": "./data/Preprocessed_Ebnerd_small/valid.csv",
-    "test_file": "./data/Preprocessed_Ebnerd_small/test.csv",
+    "dataset_id": "Ebnerd_small_stl_x2",
+    "train_file": "./data/Preprocessed_Ebnerd_small_click/train.csv",
+    "valid_file": "./data/Preprocessed_Ebnerd_small_click/valid.csv",
+    "test_file": "./data/Preprocessed_Ebnerd_small_click/test.csv",
     "features": [
         {"name": "impression_id", "type": "meta"},
 
@@ -52,7 +52,7 @@
 
     ],
     "target": [
-        {"name": "is_user_top_category", "type": "binary-vector", "splitter": "^"}
+        {"name": "fully_scrolled", "type": "binary"}
     ],
     "group_id": "impression_id"
 }

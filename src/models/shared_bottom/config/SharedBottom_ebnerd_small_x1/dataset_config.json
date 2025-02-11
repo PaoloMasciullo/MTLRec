@@ -39,6 +39,7 @@
             "mapped_feature": "article_id", "min_freq": 1},
 
         {"name": "hist_id", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding": "article_id", "min_freq": 10},
+        {"name": "hist_type", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding":  "article_type", "min_freq": 10},
         {"name": "hist_cat", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding": "category", "min_freq": 10},
         {"name": "hist_topic1", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding":  "topic1", "min_freq": 10},
         {"name": "hist_sentiment", "type": "sequence", "pooling": "average", "max_len": 100, "splitter": "^", "share_embedding":  "sentiment_label", "min_freq": 10},

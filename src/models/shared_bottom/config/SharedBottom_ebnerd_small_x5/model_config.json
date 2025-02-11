@@ -1,0 +1,14 @@
+{
+  "model": "SharedBottom",
+  "config": {
+    "embedding_dim": 128,
+    "num_tasks": 2,
+    "bottom_hidden_units": [256],
+    "tower_hidden_units": [64],
+    "tower_output_sizes": [1, 32],
+    "tower_output_activations": ["Sigmoid", "Sigmoid"],
+    "hidden_activations": "ReLU",
+    "dropout_probs": 0.5,
+    "use_batchnorm": true
+  }
+}

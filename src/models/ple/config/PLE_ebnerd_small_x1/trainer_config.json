@@ -4,7 +4,7 @@
   "task": ["binary-classification", "binary-classification"],
   "seq_dependence": [null, 0],
   "seq_dep_neg_samples": [null, "ignore"],
-  "adaptive_method": {"name":  "dwa", "params": {"temperature": 2.0}},
+  "adaptive_method": {"name":  "pcgrad"},
   "loss_function": ["BCELoss()", "BCELoss()"],
   "monitor_metric": ["AucScore()", "AucScore()"],
   "monitor_metric_weight": [0.8, 0.2],

@@ -1,0 +1,14 @@
+{
+  "model": "AITM",
+  "config": {
+    "embedding_dim": 128,
+    "num_tasks": 2,
+    "bottom_hidden_units": [256],
+    "tower_hidden_units": [64],
+    "tower_output_sizes": [1, 3],
+    "tower_output_activations": ["Sigmoid", null],
+    "hidden_activations": "ReLU",
+    "dropout_probs": 0.5,
+    "use_batchnorm": true
+  }
+}
