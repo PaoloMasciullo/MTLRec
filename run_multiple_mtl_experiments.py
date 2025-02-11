@@ -71,7 +71,7 @@ def run_experiment(seed, model_dir, experiment_id, device):
     model = model_class(feature_map=data_processor.feature_map, **model_config["config"])
 
     metric_functions_1 = [metrics.AucScore()]  # Task 1
-    metric_functions_2 = [metrics.AucScore()]  # Task 2
+    metric_functions_2 = [metrics.AvgAucScore()]  # Task 2
 
     evaluators = [
         ModelEvaluator(metric_functions=metric_functions_1),
@@ -101,7 +101,7 @@ def run_experiment(seed, model_dir, experiment_id, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default='./src/models/ple', help='The model directory')
-    parser.add_argument('--expid', type=str, default='PLE_ebnerd_small_x1', help='The experiment ID to run')
+    parser.add_argument('--expids', type=str, default='PLE_ebnerd_small_x1', help='List of experiment IDs to run')
     parser.add_argument('--gpu', type=int, default=-1, help='The GPU index, -1 for CPU')
     parser.add_argument('--seeds', type=int, nargs='+', default=[42, 123, 2024, 281611, 26022024], help='List of random seeds to use')
     parser.add_argument('--output_csv', type=str, default="experiment_results.csv", help="CSV file to store results")
@@ -109,38 +109,39 @@ def main():
     args = vars(parser.parse_args())
 
     model_dir = args['model_dir']
-    experiment_id = args['expid']
+    experiment_ids = [item for item in args['expids'].split(',')]
     device = args['gpu']
     seeds = args['seeds']
-    output_csv_dir = 'experiments/' + experiment_id + "_dwa"
-    os.makedirs(output_csv_dir, exist_ok=True)
-    output_csv = output_csv_dir + '/' + args['output_csv']
+    for exp_id in experiment_ids:
+        output_csv_dir = 'experiments/' + exp_id
+        os.makedirs(output_csv_dir, exist_ok=True)
+        output_csv = output_csv_dir + '/' + args['output_csv']
 
-    all_results = []
+        all_results = []
 
-    for seed in seeds:
-        print(f"Running experiment with seed {seed}...")
-        results = run_experiment(seed, model_dir, experiment_id, device)
-        results['seed'] = seed  # Store seed for reference
-        all_results.append(results)
+        for seed in seeds:
+            print(f"\n############################# Running experiment {exp_id} with seed {seed} #############################")
+            results = run_experiment(seed, model_dir, exp_id, device)
+            results['seed'] = seed  # Store seed for reference
+            all_results.append(results)
 
-    # Convert results to a DataFrame and save to CSV
-    df = pd.DataFrame(all_results)
-    df.to_csv(output_csv, index=False)
-    print(f"Results saved to {output_csv}")
+        # Convert results to a DataFrame and save to CSV
+        df = pd.DataFrame(all_results)
+        df.to_csv(output_csv, index=False)
+        print(f"Results saved to {output_csv}")
 
-    # Compute mean and standard deviation
-    mean_results = df.drop(columns=['seed']).mean()
-    std_results = df.drop(columns=['seed']).std()
+        # Compute mean and standard deviation
+        mean_results = df.drop(columns=['seed']).mean()
+        std_results = df.drop(columns=['seed']).std()
 
-    # Save mean and std to CSV
-    summary_df = pd.DataFrame({'Metric': mean_results.index, 'Mean': mean_results.values, 'Std': std_results.values})
-    summary_csv = output_csv.replace(".csv", "_summary.csv")
-    summary_df.to_csv(summary_csv, index=False)
+        # Save mean and std to CSV
+        summary_df = pd.DataFrame({'Metric': mean_results.index, 'Mean': mean_results.values, 'Std': std_results.values})
+        summary_csv = output_csv.replace(".csv", "_summary.csv")
+        summary_df.to_csv(summary_csv, index=False)
 
-    print(f"Summary saved to {summary_csv}")
-    print(f"\nMean Performance:\n", mean_results)
-    print("\nStandard Deviation:\n", std_results)
+        print(f"Summary saved to {summary_csv}")
+        print(f"\nMean Performance:\n", mean_results)
+        print("\nStandard Deviation:\n", std_results)
 
 
 if __name__ == '__main__':

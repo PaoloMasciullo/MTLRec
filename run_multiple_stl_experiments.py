@@ -70,7 +70,7 @@ def run_experiment(seed, model_dir, experiment_id, device):
     model_class = getattr(models, model_config['model'])
     model = model_class(feature_map=data_processor.feature_map, **model_config["config"])
 
-    metric_functions = [metrics.AucScore()]  # Task 1
+    metric_functions = [metrics.AvgAucScore()]
 
     evaluators = ModelEvaluator(metric_functions=metric_functions)
 
@@ -97,7 +97,7 @@ def run_experiment(seed, model_dir, experiment_id, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default='./src/models/mlp', help='The model directory')
-    parser.add_argument('--expid', type=str, default='MLP_ebnerd_small_x1', help='The experiment ID to run')
+    parser.add_argument('--expid', type=str, default='MLP_ebnerd_small_x4', help='The experiment ID to run')
     parser.add_argument('--gpu', type=int, default=-1, help='The GPU index, -1 for CPU')
     parser.add_argument('--seeds', type=int, nargs='+', default=[42, 123, 2024, 281611, 26022024], help='List of random seeds to use')
     parser.add_argument('--output_csv', type=str, default="experiment_results.csv", help="CSV file to store results")
