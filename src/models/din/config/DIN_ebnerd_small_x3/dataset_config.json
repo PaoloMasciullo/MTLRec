@@ -1,5 +1,5 @@
 {
-    "dataset_id": "Ebnerd_small_stl_x4",
+    "dataset_id": "Ebnerd_small_stl_x3",
     "train_file": "./data/Preprocessed_Ebnerd_small_click/train.csv",
     "valid_file": "./data/Preprocessed_Ebnerd_small_click/valid.csv",
     "test_file": "./data/Preprocessed_Ebnerd_small_click/test.csv",
